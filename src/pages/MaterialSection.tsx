@@ -1,56 +1,33 @@
-// MaterialSection.tsx
+import { useMemo, useState } from "react";
+import type { QuoteSection, QuoteMaterial } from "../types/db2";
+import type { MaterialSheet, CostOption } from "../types/db1";
+import { calculateMaterial } from "../pricing/calculator";
+import { MaterialSelector } from "../components/MaterialSelector";
+import { MaterialCard } from "../components/MaterialCard";
+import { BrandingSelector } from "../components/BrandingSelector";
+import { LaborSelector } from "../components/LaborSelector";
 
-import {
-  useEffect,
-  useMemo,
-  useState
-} from "react";
-
-import type {
-  QuoteSection,
-  QuoteMaterial
-} from "../types/db2";
-
-import {
-  calculateMaterial,
-  hasAllRequiredQuestions
-} from "../pricing/calculator";
-
-import {
-  MaterialSelector
-} from "../components/MaterialSelector";
-
-import {
-  MaterialCard
-} from "../components/MaterialCard";
-
-import {
-  BrandingSelector
-} from "../components/BrandingSelector";
-
-import {
-  LaborSelector
-} from "../components/LaborSelector";
-
-import type {
-  MaterialSheet,
-  CostOption
-} from "../types/db1";
-
-interface MaterialSectionProps {
+interface Props {
   sheet: MaterialSheet;
-
-  brandingOptions:
-    CostOption[];
-
-  laborOptions:
-    CostOption[];
-
+  brandingOptions: CostOption[];
+  laborOptions: CostOption[];
   value: QuoteSection;
+  onChange: (value: QuoteSection) => void;
+  readOnly?: boolean;
+}
 
-  onChange: (
-    value: QuoteSection
-  ) => void;
+function createMaterial(material: MaterialSheet["materials"][number]): QuoteMaterial {
+  const questions: QuoteMaterial["questions"] = {};
+  for (const [id, question] of Object.entries(material.questions)) {
+    questions[id] = { name: question.name, value: NaN };
+  }
+  return {
+    materialId: material.materialId,
+    material: material.materialName,
+    questions,
+    properties: { ...material.properties },
+    results: {},
+  };
 }
 
 export function MaterialSection({
@@ -58,539 +35,129 @@ export function MaterialSection({
   brandingOptions,
   laborOptions,
   value,
-  onChange
-}: MaterialSectionProps) {
+  onChange,
+  readOnly = false,
+}: Props) {
+  const [selectedMaterial, setSelectedMaterial] = useState("");
 
-  const [
-    selectedMaterialId,
-    setSelectedMaterialId
-  ] = useState("");
+  const calculatedMaterials = useMemo(() => value.materials.map((material) => {
+    const definition = sheet.materials.find((item) => item.materialId === material.materialId);
+    if (!definition) return material;
 
-  const [
-    customBrandingCost,
-    setCustomBrandingCost
-  ] = useState("");
-
-  const [
-    customLaborCost,
-    setCustomLaborCost
-  ] = useState("");
-
-  const selectedMaterial =
-    useMemo(
-      () =>
-        sheet.materials.find(
-          material =>
-            material.materialId ===
-            selectedMaterialId
-        ),
-      [
-        sheet.materials,
-        selectedMaterialId
-      ]
-    );
-
-  function addMaterial() {
-
-    if (!selectedMaterial) {
-      return;
+    const questions: Record<string, number> = {};
+    for (const [id, question] of Object.entries(definition.questions)) {
+      const entered = material.questions[id]?.value;
+      if (Number.isFinite(entered)) {
+        questions[id] = entered;
+        questions[question.name] = entered;
+        questions[question.name.toUpperCase()] = entered;
+      }
     }
 
-    const questions:
-      QuoteMaterial["questions"] = {};
-
-    for (
-      const [
-        questionId,
-        question
-      ] of Object.entries(
-        selectedMaterial.questions
-      )
-    ) {
-
-      questions[
-        questionId
-      ] = {
-        name:
-          question.name,
-
-        value:
-          NaN
-      };
-    }
-
-    const newMaterial:
-      QuoteMaterial = {
-
-      materialId:
-        selectedMaterial.materialId,
-
-      material:
-        selectedMaterial.materialName,
-
-      questions,
-
-      properties: {
-        ...selectedMaterial.properties
-      },
-
-      results: {}
-    };
-
-    onChange({
-      ...value,
-
-      materials: [
-        ...value.materials,
-        newMaterial
-      ]
-    });
-
-    setSelectedMaterialId("");
-  }
-
-  function updateMaterial(
-    index: number,
-    material: QuoteMaterial
-  ) {
-
-    const materials =
-      [...value.materials];
-
-    materials[index] =
-      material;
-
-    onChange({
-      ...value,
-      materials
-    });
-  }
-
-  function removeMaterial(
-    index: number
-  ) {
-
-    const materials =
-      value.materials.filter(
-        (_, i) =>
-          i !== index
-      );
-
-    onChange({
-      ...value,
-      materials
-    });
-  }
-
-  function updateBranding(
-    type: string,
-    cost: number
-  ) {
-
-    onChange({
-      ...value,
-
-      branding: {
-        type,
-        cost
-      }
-    });
-  }
-
-  function updateLabor(
-    type: string,
-    cost: number
-  ) {
-
-    onChange({
-      ...value,
-
-      labor: {
-        type,
-        cost
-      }
-    });
-  }
-
-  /*
-   * Recalculate material results whenever
-   * questions, branding, or labor changes.
-   */
-  useEffect(() => {
-
-    const brandingCost =
-      value.branding.cost;
-
-    const laborCost =
-      value.labor.cost;
-
-    const calculatedMaterials =
-      value.materials.map(
-        quoteMaterial => {
-
-          const definition =
-            sheet.materials.find(
-              material =>
-                material.materialId ===
-                quoteMaterial.materialId
-            );
-
-          if (!definition) {
-            return quoteMaterial;
-          }
-
-          if (
-            !hasAllRequiredQuestions(
-              definition,
-              buildQuestionValues(
-                definition,
-                quoteMaterial
-              )
-            )
-          ) {
-
-            return {
-              ...quoteMaterial,
-              results: {}
-            };
-          }
-
-          try {
-
-            const result =
-              calculateMaterial(
-                definition,
-                {
-                  questions:
-                    buildQuestionValues(
-                      definition,
-                      quoteMaterial
-                    ),
-
-                  brandingCost,
-
-                  laborCost
-                }
-              );
-
-            /*
-             * Keep the UI result calculation
-             * compatible with the DB2 result shape.
-             *
-             * Metadata is added later by
-             * calculateQuote() during publish.
-             */
-            const results =
-              Object.fromEntries(
-                Object.entries(
-                  result.results
-                ).map(
-                  ([
-                    resultName,
-                    resultValue
-                  ]) => {
-
-                    const resultDefinition =
-                      definition.results[
-                        resultName
-                      ];
-
-                    if (
-                      resultDefinition?.type ===
-                      "formula"
-                    ) {
-
-                      return [
-                        resultName,
-                        {
-                          type:
-                            "formula" as const,
-
-                          formula:
-                            resultDefinition.formula,
-
-                          value:
-                            resultValue
-                        }
-                      ];
-                    }
-
-                    return [
-                      resultName,
-                      {
-                        type:
-                          "constant" as const,
-
-                        value:
-                          resultValue
-                      }
-                    ];
-                  }
-                )
-              );
-
-            return {
-              ...quoteMaterial,
-
-              properties: {
-                ...definition.properties
-              },
-
-              results
-            };
-
-          } catch {
-
-            return {
-              ...quoteMaterial,
-              results: {}
-            };
-          }
-        }
-      );
-
-    const changed =
-      JSON.stringify(
-        calculatedMaterials
-      ) !==
-      JSON.stringify(
-        value.materials
-      );
-
-    if (changed) {
-
-      onChange({
-        ...value,
-
-        materials:
-          calculatedMaterials
+    try {
+      const calculated = calculateMaterial(definition, {
+        questions,
+        brandingCost: value.branding.cost,
+        laborCost: value.labor.cost,
       });
+      const results: QuoteMaterial["results"] = {};
+      for (const [name, result] of Object.entries(definition.results)) {
+        const calculatedValue = calculated.results[name.toUpperCase()];
+        if (!Number.isFinite(calculatedValue)) continue;
+        results[name] = result.type === "formula"
+          ? { type: "formula", formula: result.formula, value: calculatedValue }
+          : { type: "constant", value: calculatedValue };
+      }
+      return {
+        ...material,
+        material: definition.materialName,
+        properties: { ...definition.properties },
+        results,
+      };
+    } catch {
+      return material;
     }
+  }), [sheet, value]);
 
-  }, [
-    value.materials,
-    value.branding.cost,
-    value.labor.cost,
-    sheet.materials
-  ]);
+  const addMaterial = (materialId: string) => {
+    if (readOnly || !materialId) return;
+    const definition = sheet.materials.find((item) => item.materialId === materialId);
+    if (!definition) return;
+    onChange({ ...value, materials: [...value.materials, createMaterial(definition)] });
+    setSelectedMaterial("");
+  };
+
+  const updateMaterial = (index: number, material: QuoteMaterial) => {
+    if (readOnly) return;
+    const materials = [...value.materials];
+    materials[index] = material;
+    onChange({ ...value, materials });
+  };
 
   return (
     <section className="material-section">
+      <div className="section-header"><h2>{sheet.sheetName}</h2></div>
 
-      <h2>
-        {sheet.sheetName}
-      </h2>
-
-      <div className="add-material">
-
+      {!readOnly && (
         <MaterialSelector
-          materials={
-            sheet.materials
-          }
-
-          value={
-            selectedMaterialId
-          }
-
-          onChange={
-            setSelectedMaterialId
-          }
+          materials={sheet.materials}
+          value={selectedMaterial}
+          onChange={(id) => {
+            setSelectedMaterial(id);
+            addMaterial(id);
+          }}
         />
-
-        <button
-          type="button"
-          onClick={
-            addMaterial
-          }
-          disabled={
-            !selectedMaterialId
-          }
-        >
-          Add Material
-        </button>
-
-      </div>
+      )}
 
       <div className="material-list">
-
-        {value.materials.map(
-          (
-            material,
-            index
-          ) => {
-
-            const definition =
-              sheet.materials.find(
-                item =>
-                  item.materialId ===
-                  material.materialId
-              );
-
-            if (!definition) {
-              return null;
-            }
-
-            return (
-              <MaterialCard
-                key={
-                  `${material.materialId}-${index}`
-                }
-
-                material={
-                  definition
-                }
-
-                value={
-                  material
-                }
-
-                onChange={
-                  updated =>
-                    updateMaterial(
-                      index,
-                      updated
-                    )
-                }
-
-                onRemove={() =>
-                  removeMaterial(
-                    index
-                  )
-                }
-
-                canRemove={
-                  value.materials.length >
-                  1
-                }
-              />
-            );
-          }
-        )}
-
+        {value.materials.map((material, index) => {
+          const definition = sheet.materials.find((item) => item.materialId === material.materialId);
+          if (!definition) return null;
+          return (
+            <MaterialCard
+              key={`${material.materialId}-${index}`}
+              material={definition}
+              value={calculatedMaterials[index] ?? material}
+              onChange={(next) => updateMaterial(index, next)}
+              onRemove={() => {
+                if (readOnly) return;
+                onChange({ ...value, materials: value.materials.filter((_, i) => i !== index) });
+              }}
+              canRemove={!readOnly}
+              readOnly={readOnly}
+            />
+          );
+        })}
       </div>
 
-      <div className="section-costs">
+      <BrandingSelector
+        options={brandingOptions}
+        value={value.branding.type}
+        cost={value.branding.cost}
+        customCost={value.branding.type === "Custom" ? String(value.branding.cost) : ""}
+        onChange={(type, cost) => onChange({ ...value, branding: { type, cost } })}
+        onCustomCostChange={(cost) => onChange({ ...value, branding: { ...value.branding, cost } })}
+        readOnly={readOnly}
+      />
 
-        <BrandingSelector
-          options={
-            brandingOptions
-          }
+      <LaborSelector
+        options={laborOptions}
+        value={value.labor.type}
+        cost={value.labor.cost}
+        customCost={value.labor.type === "Custom" ? String(value.labor.cost) : ""}
+        onChange={(type, cost) => onChange({ ...value, labor: { type, cost } })}
+        onCustomCostChange={(cost) => onChange({ ...value, labor: { ...value.labor, cost } })}
+        readOnly={readOnly}
+      />
 
-          value={
-            value.branding.type
-          }
-
-          cost={
-            value.branding.cost
-          }
-
-          customCost={
-            customBrandingCost
-          }
-
-          onChange={
-            updateBranding
-          }
-
-          onCustomCostChange={
-            cost => {
-
-              setCustomBrandingCost(
-                String(cost)
-              );
-
-              updateBranding(
-                "Custom",
-                cost
-              );
-            }
-          }
-        />
-
-        <LaborSelector
-          options={
-            laborOptions
-          }
-
-          value={
-            value.labor.type
-          }
-
-          cost={
-            value.labor.cost
-          }
-
-          customCost={
-            customLaborCost
-          }
-
-          onChange={
-            updateLabor
-          }
-
-          onCustomCostChange={
-            cost => {
-
-              setCustomLaborCost(
-                String(cost)
-              );
-
-              updateLabor(
-                "Custom",
-                cost
-              );
-            }
-          }
-        />
-
+      <div className="section-total">
+        <strong>Section Total</strong>
+        <span>₹{calculatedMaterials.reduce((total, material) => {
+          const key = Object.keys(material.results).find((name) => name.trim().toUpperCase() === "R_COST");
+          const cost = key !== undefined ? material.results[key]?.value : undefined;
+          return typeof cost === "number" && Number.isFinite(cost) ? total + cost : total;
+        }, 0).toFixed(2)}</span>
       </div>
-
     </section>
   );
-}
-
-function buildQuestionValues(
-  definition: MaterialSheet["materials"][number],
-  quoteMaterial: QuoteMaterial
-): Record<string, number> {
-
-  const questions:
-    Record<string, number> = {};
-
-  for (
-    const [
-      questionId,
-      question
-    ] of Object.entries(
-      definition.questions
-    )
-  ) {
-
-    const entered =
-      quoteMaterial.questions?.[
-        questionId
-      ];
-
-    const value =
-      typeof entered === "number"
-        ? entered
-        : entered?.value;
-
-    if (
-      value === undefined ||
-      value === null
-    ) {
-      continue;
-    }
-
-    questions[
-      questionId
-    ] = value;
-
-    questions[
-      question.name
-    ] = value;
-  }
-
-  return questions;
 }
