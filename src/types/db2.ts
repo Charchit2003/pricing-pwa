@@ -27,6 +27,8 @@ export interface QuoteMaterial {
       value: number;
     }
   >;
+
+  calculationError?: string;
 }
 
 export interface QuoteBranding {
