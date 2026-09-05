@@ -94,9 +94,24 @@ export function MaterialSection({
     onChange({ ...value, materials });
   };
 
+  const materialTotal = calculatedMaterials.reduce((total, material) => {
+    const key = Object.keys(material.results).find((name) => name.trim().toUpperCase() === "R_COST");
+    const cost = key !== undefined ? material.results[key]?.value : undefined;
+    return typeof cost === "number" && Number.isFinite(cost) ? total + cost : total;
+  }, 0);
+  const brandingCost = Number.isFinite(value.branding.cost) ? value.branding.cost : 0;
+  const laborCost = Number.isFinite(value.labor.cost) ? value.labor.cost : 0;
+  const sectionTotal = materialTotal + brandingCost + laborCost;
+
   return (
     <section className="material-section">
-      <div className="section-header"><h2>{sheet.sheetName}</h2></div>
+      <div className="section-header">
+        <div>
+          <h2>{sheet.sheetName}</h2>
+          <span className="section-subtotal">Section total: ₹{sectionTotal.toFixed(2)}</span>
+        </div>
+        <strong className="section-header-total">₹{sectionTotal.toFixed(2)}</strong>
+      </div>
 
       {!readOnly && (
         <MaterialSelector
@@ -150,13 +165,11 @@ export function MaterialSection({
         readOnly={readOnly}
       />
 
-      <div className="section-total">
-        <strong>Section Total</strong>
-        <span>₹{calculatedMaterials.reduce((total, material) => {
-          const key = Object.keys(material.results).find((name) => name.trim().toUpperCase() === "R_COST");
-          const cost = key !== undefined ? material.results[key]?.value : undefined;
-          return typeof cost === "number" && Number.isFinite(cost) ? total + cost : total;
-        }, 0).toFixed(2)}</span>
+      <div className="section-cost-breakdown">
+        <div><span>Materials</span><strong>₹{materialTotal.toFixed(2)}</strong></div>
+        <div><span>Branding</span><strong>₹{brandingCost.toFixed(2)}</strong></div>
+        <div><span>Labor</span><strong>₹{laborCost.toFixed(2)}</strong></div>
+        <div className="section-total"><strong>Section Total</strong><strong>₹{sectionTotal.toFixed(2)}</strong></div>
       </div>
     </section>
   );
