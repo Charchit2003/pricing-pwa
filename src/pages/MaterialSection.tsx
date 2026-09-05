@@ -64,7 +64,7 @@ export function MaterialSection({
       for (const [name, result] of Object.entries(definition.results)) {
         const calculatedValue = calculated.results[name.toUpperCase()];
         if (!Number.isFinite(calculatedValue)) continue;
-        results[name] = result.type === "formula"
+        results[name] = (result && result.type === "formula")
           ? { type: "formula", formula: result.formula, value: calculatedValue }
           : { type: "constant", value: calculatedValue };
       }

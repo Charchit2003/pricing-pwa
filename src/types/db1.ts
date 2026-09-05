@@ -11,6 +11,7 @@ export interface QuestionDefinition {
 }
 
 export type ResultDefinition =
+  | null
   | {
       type: "constant";
       value: number;

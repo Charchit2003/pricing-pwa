@@ -2,10 +2,105 @@ import type { MaterialDefinition, ResultDefinition } from "../types/db1";
 import { parse, type ASTNode } from "./parser";
 import { evaluate, type VariableContext } from "./evaluator";
 import { FormulaError } from "./tokenizer";
-export interface CalculationInput{questions:Record<string,number>;brandingCost?:number;laborCost?:number}
-export interface CalculationResult{results:Record<string,number>}
-const canon=(v:string)=>v.trim().toUpperCase();
-export function extractVariables(node:ASTNode){const out=new Set<string>();const visit=(n:ASTNode):void=>{if(n.type==="variable")out.add(canon(n.name));else if(n.type==="unary")visit(n.operand);else if(n.type==="binary"){visit(n.left);visit(n.right);}};visit(node);return [...out];}
-const find=(obj:Record<string,unknown>,name:string)=>Object.keys(obj).find(k=>canon(k)===canon(name));
-export function calculateMaterial(material:MaterialDefinition,input:CalculationInput):CalculationResult{const vars:VariableContext={};for(const[k,v]of Object.entries(input.questions)){if(!Number.isFinite(v))throw new FormulaError(`Question "${k}" has invalid value`);vars[canon(k)]=v;}for(const[k,v]of Object.entries(material.properties)){if(!Number.isFinite(v))throw new FormulaError(`Property "${k}" has invalid value`);vars[canon(k)]=v;}const branding=input.brandingCost??0,labor=input.laborCost??0;if(!Number.isFinite(branding)||branding<0)throw new FormulaError("Branding cost must be a valid non-negative number");if(!Number.isFinite(labor)||labor<0)throw new FormulaError("Labor cost must be a valid non-negative number");vars.BRANDING_COST=branding;vars.LABOR_COST=labor;const asts:Record<string,ASTNode>={};for(const[k,r]of Object.entries(material.results))if(r.type==="formula")asts[k]=parse(r.formula);const results:Record<string,number>={};const visiting=new Set<string>(),done=new Set<string>();const calc=(name:string):number=>{const actual=find(material.results,name);if(!actual)throw new FormulaError(`Result "${name}" is not defined`);const key=canon(actual);if(done.has(key))return results[key];if(visiting.has(key))throw new FormulaError(`Circular dependency detected involving ${actual}`);const def:ResultDefinition=material.results[actual];if(def.type==="constant"){if(!Number.isFinite(def.value))throw new FormulaError(`Result "${actual}" has invalid constant value`);results[key]=def.value;vars[key]=def.value;done.add(key);return def.value;}visiting.add(key);const ast=asts[actual];if(!ast)throw new FormulaError(`Formula for "${actual}" could not be parsed`);for(const dep of extractVariables(ast)){const depResult=find(material.results,dep);if(depResult)vars[canon(depResult)]=calc(depResult);}const value=evaluate(ast,vars);if(!Number.isFinite(value))throw new FormulaError(`Result "${actual}" produced an invalid value`);results[key]=value;vars[key]=value;visiting.delete(key);done.add(key);return value;};for(const name of Object.keys(material.results))calc(name);return{results};}
-export function hasAllRequiredQuestions(material:MaterialDefinition,questions:Record<string,number>){return Object.entries(material.questions).every(([id,q])=>!q.required||(Number.isFinite(questions[q.name])||Number.isFinite(questions[id])));}
+export interface CalculationInput {
+  questions: Record<string, number>;
+  brandingCost?: number;
+  laborCost?: number;
+}
+export interface CalculationResult {
+  results: Record<string, number>;
+}
+const canon = (v: string) => v.trim().toUpperCase();
+export function extractVariables(node: ASTNode) {
+  const out = new Set<string>();
+  const visit = (n: ASTNode): void => {
+    if (n.type === "variable") out.add(canon(n.name));
+    else if (n.type === "unary") visit(n.operand);
+    else if (n.type === "binary") {
+      visit(n.left);
+      visit(n.right);
+    }
+  };
+  visit(node);
+  return [...out];
+}
+const find = (obj: Record<string, unknown>, name: string) =>
+  Object.keys(obj).find((k) => canon(k) === canon(name));
+export function calculateMaterial(
+  material: MaterialDefinition,
+  input: CalculationInput,
+): CalculationResult {
+  const vars: VariableContext = {};
+  for (const [k, v] of Object.entries(input.questions)) {
+    if (!Number.isFinite(v))
+      throw new FormulaError(`Question "${k}" has invalid value`);
+    vars[canon(k)] = v;
+  }
+  for (const [k, v] of Object.entries(material.properties)) {
+    if (!Number.isFinite(v))
+      throw new FormulaError(`Property "${k}" has invalid value`);
+    vars[canon(k)] = v;
+  }
+  const branding = input.brandingCost ?? 0,
+    labor = input.laborCost ?? 0;
+  if (!Number.isFinite(branding) || branding < 0)
+    throw new FormulaError("Branding cost must be a valid non-negative number");
+  if (!Number.isFinite(labor) || labor < 0)
+    throw new FormulaError("Labor cost must be a valid non-negative number");
+  vars.BRANDING_COST = branding;
+  vars.LABOR_COST = labor;
+  const asts: Record<string, ASTNode> = {};
+  for (const [k, r] of Object.entries(material.results))
+    if (r && r.type === "formula") asts[k] = parse(r.formula);
+  const results: Record<string, number> = {};
+  const visiting = new Set<string>(),
+    done = new Set<string>();
+  const calc = (name: string): number => {
+    const actual = find(material.results, name);
+    if (!actual) throw new FormulaError(`Result "${name}" is not defined`);
+    const key = canon(actual);
+    if (done.has(key)) return results[key];
+    if (visiting.has(key))
+      throw new FormulaError(
+        `Circular dependency detected involving ${actual}`,
+      );
+    const def: ResultDefinition = material.results[actual];
+    if (def && def.type === "constant") {
+      if (!Number.isFinite(def.value))
+        throw new FormulaError(`Result "${actual}" has invalid constant value`);
+      results[key] = def.value;
+      vars[key] = def.value;
+      done.add(key);
+      return def.value;
+    }
+    visiting.add(key);
+    const ast = asts[actual];
+    if (!ast)
+      throw new FormulaError(`Formula for "${actual}" could not be parsed`);
+    for (const dep of extractVariables(ast)) {
+      const depResult = find(material.results, dep);
+      if (depResult) vars[canon(depResult)] = calc(depResult);
+    }
+    const value = evaluate(ast, vars);
+    if (!Number.isFinite(value))
+      throw new FormulaError(`Result "${actual}" produced an invalid value`);
+    results[key] = value;
+    vars[key] = value;
+    visiting.delete(key);
+    done.add(key);
+    return value;
+  };
+  for (const name of Object.keys(material.results)) calc(name);
+  return { results };
+}
+export function hasAllRequiredQuestions(
+  material: MaterialDefinition,
+  questions: Record<string, number>,
+) {
+  return Object.entries(material.questions).every(
+    ([id, q]) =>
+      !q.required ||
+      Number.isFinite(questions[q.name]) ||
+      Number.isFinite(questions[id]),
+  );
+}

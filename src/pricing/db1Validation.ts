@@ -56,6 +56,9 @@ function validateMaterial(material: MaterialDefinition, path: string) {
   if (!Object.keys(material.results).some((k) => canon(k) === "R_COST"))
     throw new DB1ValidationError(`${path}: R_Cost result is required`);
   for (const [id, r] of Object.entries(material.results)) {
+    if (r === null) {
+        continue;
+    }
     const k = canon(id);
     if (!RESULT_ID.test(k))
       throw new DB1ValidationError(`${path}.results: invalid key "${id}"`);
@@ -90,7 +93,7 @@ function validateMaterial(material: MaterialDefinition, path: string) {
       );
     visiting.add(k);
     const r = material.results[resultKeys.get(k)!];
-    if (r.type === "formula")
+    if (r && r.type === "formula")
       for (const d of r.dependencies.map(canon))
         if (resultKeys.has(d)) visit(d);
     visiting.delete(k);
